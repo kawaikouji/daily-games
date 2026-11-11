@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>ニョキッと！チンアナゴ | 11月11日チンアナゴの日</title>
+  <meta name="description" content="指一本でニョキッと伸びてプランクトンやエビをパクッ！ウニやカニが来たら砂にサッと隠れる、11月11日チンアナゴの日記念カジュアルアクションゲーム。" />
+  <style>
+    :root {
+      --bg-deep: #041424;
+      --bg-frame: #07223b;
+      --accent-cyan: #38ef7d;
+      --accent-gold: #ffd166;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: radial-gradient(circle at 50% 20%, #0b3155 0%, #04111f 75%, #020810 100%);
+      font-family: "Hiragino Maru Gothic ProN", "Rounded Mplus 1c", "Yu Gothic", -apple-system, BlinkMacSystemFont, sans-serif;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #stage-wrapper {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    #game-container {
+      position: relative;
+      width: min(100vw, calc(100vh * 9 / 16));
+      width: min(100vw, calc(100dvh * 9 / 16));
+      height: min(100vh, calc(100vw * 16 / 9));
+      height: min(100dvh, calc(100vw * 16 / 9));
+      max-width: 480px;
+      max-height: 853px;
+      aspect-ratio: 9 / 16;
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow:
+        0 20px 60px rgba(0, 0, 0, 0.65),
+        0 0 0 2px rgba(120, 220, 255, 0.22);
+      background: #062b4c;
+    }
+    @media (max-width: 480px) {
+      #game-container {
+        width: 100vw;
+        height: min(100dvh, calc(100vw * 16 / 9));
+        border-radius: 0;
+        box-shadow: none;
+      }
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      cursor: pointer;
+    }
+    .sr-only {
