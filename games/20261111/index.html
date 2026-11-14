@@ -6,71 +6,557 @@
   <title>ニョキッと！チンアナゴ | 11月11日チンアナゴの日</title>
   <meta name="description" content="指一本でニョキッと伸びてプランクトンやエビをパクッ！ウニやカニが来たら砂にサッと隠れる、11月11日チンアナゴの日記念カジュアルアクションゲーム。" />
   <style>
-    :root {
-      --bg-deep: #041424;
-      --bg-frame: #07223b;
-      --accent-cyan: #38ef7d;
-      --accent-gold: #ffd166;
-    }
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
-      -webkit-tap-highlight-color: transparent;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
     html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
+      width: 100%; height: 100%; overflow: hidden;
       background: radial-gradient(circle at 50% 20%, #0b3155 0%, #04111f 75%, #020810 100%);
       font-family: "Hiragino Maru Gothic ProN", "Rounded Mplus 1c", "Yu Gothic", -apple-system, BlinkMacSystemFont, sans-serif;
-      touch-action: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      touch-action: none; display: flex; align-items: center; justify-content: center;
     }
     #stage-wrapper {
-      position: relative;
-      width: 100vw;
-      height: 100vh;
-      height: 100dvh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      position: relative; width: 100vw; height: 100vh; height: 100dvh;
+      display: flex; align-items: center; justify-content: center;
     }
     #game-container {
       position: relative;
-      width: min(100vw, calc(100vh * 9 / 16));
-      width: min(100vw, calc(100dvh * 9 / 16));
-      height: min(100vh, calc(100vw * 16 / 9));
-      height: min(100dvh, calc(100vw * 16 / 9));
-      max-width: 480px;
-      max-height: 853px;
-      aspect-ratio: 9 / 16;
-      border-radius: 18px;
-      overflow: hidden;
-      box-shadow:
-        0 20px 60px rgba(0, 0, 0, 0.65),
-        0 0 0 2px rgba(120, 220, 255, 0.22);
+      width: min(100vw, calc(100vh * 9 / 16)); width: min(100vw, calc(100dvh * 9 / 16));
+      height: min(100vh, calc(100vw * 16 / 9)); height: min(100dvh, calc(100vw * 16 / 9));
+      max-width: 480px; max-height: 853px; aspect-ratio: 9 / 16;
+      border-radius: 18px; overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.65), 0 0 0 2px rgba(120,220,255,0.22);
       background: #062b4c;
     }
     @media (max-width: 480px) {
-      #game-container {
-        width: 100vw;
-        height: min(100dvh, calc(100vw * 16 / 9));
-        border-radius: 0;
-        box-shadow: none;
+      #game-container { width: 100vw; height: min(100dvh, calc(100vw * 16 / 9)); border-radius: 0; box-shadow: none; }
+    }
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: pointer; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  </style>
+</head>
+<body>
+  <h1 class="sr-only">ニョキッと！チンアナゴ - 11月11日チンアナゴの日記念ゲーム</h1>
+  <main id="stage-wrapper">
+    <div id="game-container">
+      <canvas id="game-canvas" width="360" height="640" aria-label="ニョキッと！チンアナゴ ゲーム画面"></canvas>
+    </div>
+  </main>
+  <script>
+    (() => {
+      "use strict";
+      const W = 360, H = 640, SAND_Y = 580, MIN_EEL_Y = 120, MAX_EEL_Y = SAND_Y, EEL_X = W * 0.5, HEAD_RADIUS = 17;
+      const STORAGE_KEY = "nyokitto_chinanago_highscore_20261111";
+      const STATE = { TITLE: "TITLE", PLAYING: "PLAYING", GAMEOVER: "GAMEOVER" };
+      const canvas = document.getElementById("game-canvas");
+      const ctx = canvas.getContext("2d");
+
+      class SoundEngine {
+        constructor() { this.ctx = null; this.muted = false; }
+        init() {
+          if (!this.ctx) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (AudioCtx) this.ctx = new AudioCtx();
+          }
+          if (this.ctx && this.ctx.state === "suspended") this.ctx.resume();
+        }
+        toggleMute() { this.muted = !this.muted; return this.muted; }
+        playCatch(combo = 1, isGold = false) {
+          if (this.muted || !this.ctx) return;
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.type = isGold ? "triangle" : "sine";
+          const baseFreq = 520 + Math.min(combo, 15) * 38;
+          osc.frequency.setValueAtTime(baseFreq, now);
+          osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.45, now + 0.09);
+          gain.gain.setValueAtTime(0.16, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.start(now); osc.stop(now + 0.14);
+          if (isGold) {
+            const osc2 = this.ctx.createOscillator(), gain2 = this.ctx.createGain();
+            osc2.type = "sine";
+            osc2.frequency.setValueAtTime(baseFreq * 1.5, now + 0.05);
+            osc2.frequency.exponentialRampToValueAtTime(baseFreq * 2.2, now + 0.18);
+            gain2.gain.setValueAtTime(0.14, now + 0.05);
+            gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+            osc2.connect(gain2); gain2.connect(this.ctx.destination);
+            osc2.start(now + 0.05); osc2.stop(now + 0.2);
+          }
+        }
+        playExtend() {
+          if (this.muted || !this.ctx) return;
+          const now = this.ctx.currentTime, osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(280, now); osc.frequency.exponentialRampToValueAtTime(540, now + 0.08);
+          gain.gain.setValueAtTime(0.08, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+          osc.connect(gain); gain.connect(this.ctx.destination); osc.start(now); osc.stop(now + 0.09);
+        }
+        playDive() {
+          if (this.muted || !this.ctx) return;
+          const now = this.ctx.currentTime, osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(460, now); osc.frequency.exponentialRampToValueAtTime(150, now + 0.11);
+          gain.gain.setValueAtTime(0.11, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+          osc.connect(gain); gain.connect(this.ctx.destination); osc.start(now); osc.stop(now + 0.12);
+        }
+        playDamage() {
+          if (this.muted || !this.ctx) return;
+          const now = this.ctx.currentTime, osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.type = "sawtooth";
+          osc.frequency.setValueAtTime(170, now); osc.frequency.linearRampToValueAtTime(75, now + 0.26);
+          gain.gain.setValueAtTime(0.18, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+          osc.connect(gain); gain.connect(this.ctx.destination); osc.start(now); osc.stop(now + 0.28);
+        }
+        playFeverFanfare() {
+          if (this.muted || !this.ctx) return;
+          const now = this.ctx.currentTime;
+          [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((freq, i) => {
+            const osc = this.ctx.createOscillator(), gain = this.ctx.createGain(), t = now + i * 0.065;
+            osc.type = "triangle"; osc.frequency.setValueAtTime(freq, t);
+            gain.gain.setValueAtTime(0.16, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
+            osc.connect(gain); gain.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.25);
+          });
+        }
+        playGameOver() {
+          if (this.muted || !this.ctx) return;
+          const now = this.ctx.currentTime;
+          [440, 392, 349.23, 261.63].forEach((freq, i) => {
+            const osc = this.ctx.createOscillator(), gain = this.ctx.createGain(), t = now + i * 0.13;
+            osc.type = "sine"; osc.frequency.setValueAtTime(freq, t);
+            gain.gain.setValueAtTime(0.14, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
+            osc.connect(gain); gain.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.28);
+          });
+        }
       }
-    }
-    canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-      touch-action: none;
-      cursor: pointer;
-    }
-    .sr-only {
+
+      const sound = new SoundEngine();
+      let gameState = STATE.TITLE, score = 0, highScore = 0;
+      try { highScore = parseInt(localStorage.getItem(STORAGE_KEY) || "0", 10) || 0; } catch (_) { highScore = 0; }
+      let combo = 0, maxCombo = 0, caughtCount = 0, hearts = 3, feverCharge = 0, feverTimer = 0;
+      const FEVER_DURATION = 8.0;
+      let gameTime = 0, playTime = 0, shakeTimer = 0, invulnTimer = 0;
+      const eel = { x: EEL_X, y: SAND_Y, targetY: SAND_Y, isTouching: false, pointerId: null, eatAnim: 0, hurtAnim: 0 };
+      const bgBubbles = [], bgEels = [], corals = [], sandDots = [];
+      let items = [], particles = [], floatingTexts = [], spawnFoodTimer = 0, spawnHazardTimer = 0;
+
+      function initScenery() {
+        bgBubbles.length = 0;
+        for (let i = 0; i < 24; i++) {
+          bgBubbles.push({ x: Math.random() * W, y: Math.random() * SAND_Y, r: 1.5 + Math.random() * 4.5, vy: 18 + Math.random() * 32, wobblePhase: Math.random() * Math.PI * 2 });
+        }
+        bgEels.length = 0;
+        [30, 58, 88, 120, 146, 214, 240, 272, 302, 330].forEach((bx, idx) => {
+          bgEels.push({ x: bx, baseHeight: 45 + (idx % 3) * 24, currentHeight: 45 + (idx % 3) * 24, type: idx % 2 === 0 ? "spotted" : "striped", dir: idx < 5 ? 1 : -1, phase: idx * 0.7, scale: 0.56 + (idx % 3) * 0.08 });
+        });
+        corals.length = 0;
+        [{ x: 24, w: 46, h: 95, color: "#06395e" }, { x: 75, w: 34, h: 65, color: "#084771" }, { x: 290, w: 40, h: 78, color: "#084771" }, { x: 336, w: 50, h: 110, color: "#06395e" }].forEach(c => corals.push(c));
+        sandDots.length = 0;
+        for (let i = 0; i < 45; i++) {
+          sandDots.push({ x: Math.random() * W, y: SAND_Y + 6 + Math.random() * (H - SAND_Y - 10), r: 1 + Math.random() * 2, alpha: 0.18 + Math.random() * 0.25 });
+        }
+      }
+      initScenery();
+
+      function spawnSandSplash(x, y, count = 8, color = "#f4d590") {
+        for (let i = 0; i < count; i++) {
+          const angle = -Math.PI * (0.15 + Math.random() * 0.7), speed = 45 + Math.random() * 95;
+          particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r: 2 + Math.random() * 3, color, life: 0.45 + Math.random() * 0.25, maxLife: 0.7, gravity: 240, type: "circle" });
+        }
+      }
+      function spawnCatchParticles(x, y, color = "#72efdd", isFever = false) {
+        const count = isFever ? 16 : 11;
+        for (let i = 0; i < count; i++) {
+          const angle = (Math.PI * 2 * i) / count + Math.random() * 0.3, speed = 40 + Math.random() * 110;
+          particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 20, r: 2.5 + Math.random() * 3.5, color: isFever ? `hsl(${(i * 36 + gameTime * 200) % 360}, 95%, 68%)` : color, life: 0.55, maxLife: 0.55, gravity: -35, type: i % 2 === 0 ? "bubble" : "star" });
+        }
+      }
+      function addFloatingText(x, y, text, color = "#ffffff", size = 16) {
+        floatingTexts.push({ x: Math.max(44, Math.min(W - 44, x)), y, text, color, size, life: 0.85, maxLife: 0.85 });
+      }
+      function spawnFood(isFever = false) {
+        const fromLeft = Math.random() < 0.5, y = 135 + Math.random() * (SAND_Y - 195), speedMult = 1 + Math.min(playTime / 90, 0.75);
+        let subType = "plankton", pts = 100, radius = 12, speed = (62 + Math.random() * 48) * speedMult;
+        const roll = Math.random();
+        if (isFever || roll > 0.82) { subType = "gold_shrimp"; pts = 300; radius = 15; speed = (82 + Math.random() * 55) * speedMult; }
+        else if (roll > 0.42) { subType = "shrimp"; pts = 200; radius = 14; speed = (72 + Math.random() * 50) * speedMult; }
+        items.push({ kind: "food", subType, x: fromLeft ? -24 : W + 24, y, baseY: y, vx: (fromLeft ? 1 : -1) * speed, r: radius, pts, phase: Math.random() * Math.PI * 2, wobbleAmp: subType === "plankton" ? 10 : 15, wobbleFreq: subType === "plankton" ? 3.2 : 4.6 });
+      }
+      function spawnHazard() {
+        const fromLeft = Math.random() < 0.5;
+        const targetBand = eel.y < SAND_Y - 35 && Math.random() < 0.55 ? Math.max(135, Math.min(SAND_Y - 55, eel.y + (Math.random() - 0.5) * 90)) : 140 + Math.random() * (SAND_Y - 195);
+        const isCrab = Math.random() < 0.48, speedMult = 1 + Math.min(playTime / 75, 0.85);
+        const speed = (isCrab ? 96 + Math.random() * 52 : 76 + Math.random() * 45) * speedMult;
+        items.push({ kind: "hazard", subType: isCrab ? "crab" : "urchin", x: fromLeft ? -28 : W + 28, y: targetBand, baseY: targetBand, vx: (fromLeft ? 1 : -1) * speed, r: isCrab ? 16 : 15, phase: Math.random() * Math.PI * 2, rot: 0 });
+      }
+      function triggerFever() {
+        feverTimer = FEVER_DURATION; feverCharge = 10; sound.playFeverFanfare();
+        addFloatingText(W / 2, 220, "🌈 NYOKI FEVER!! x3 🌈", "#ffe066", 22);
+        items.forEach(it => {
+          if (it.kind === "hazard") { it.kind = "food"; it.subType = "gold_shrimp"; it.pts = 300; it.r = 15; spawnCatchParticles(it.x, it.y, "#ffd166", true); }
+        });
+      }
+      function startGame() {
+        sound.init(); sound.playExtend(); gameState = STATE.PLAYING;
+        score = 0; combo = 0; maxCombo = 0; caughtCount = 0; hearts = 3; feverCharge = 0; feverTimer = 0; playTime = 0; shakeTimer = 0; invulnTimer = 0;
+        eel.y = SAND_Y; eel.targetY = SAND_Y; eel.isTouching = false; eel.eatAnim = 0; eel.hurtAnim = 0;
+        items = []; particles = []; floatingTexts = []; spawnFoodTimer = 0.15; spawnHazardTimer = 1.6;
+        for (let i = 0; i < 3; i++) spawnFood(false);
+      }
+      function endGame() {
+        gameState = STATE.GAMEOVER; eel.isTouching = false; eel.targetY = SAND_Y; sound.playGameOver();
+        if (score > highScore) { highScore = score; try { localStorage.setItem(STORAGE_KEY, String(highScore)); } catch (_) {} }
+      }
+      function getCanvasPoint(e) {
+        const rect = canvas.getBoundingClientRect();
+        return { x: (e.clientX - rect.left) * (W / rect.width), y: (e.clientY - rect.top) * (H / rect.height) };
+      }
+      function isMuteButtonHit(pt) { return pt.x >= W - 44 && pt.x <= W - 8 && pt.y >= 54 && pt.y <= 90; }
+
+      canvas.addEventListener("pointerdown", e => {
+        e.preventDefault(); sound.init();
+        const pt = getCanvasPoint(e);
+        if (isMuteButtonHit(pt)) { sound.toggleMute(); return; }
+        if (gameState === STATE.TITLE) {
+          startGame(); eel.isTouching = true; eel.pointerId = e.pointerId;
+          eel.targetY = Math.max(MIN_EEL_Y, Math.min(MAX_EEL_Y - 18, pt.y)); return;
+        }
+        if (gameState === STATE.GAMEOVER) { if (pt.y >= 380 && pt.y <= 520) startGame(); return; }
+        if (gameState === STATE.PLAYING) {
+          if (!eel.isTouching) { sound.playExtend(); spawnSandSplash(EEL_X, SAND_Y, 6, "#f3d287"); }
+          eel.isTouching = true; eel.pointerId = e.pointerId;
+          eel.targetY = Math.max(MIN_EEL_Y, Math.min(MAX_EEL_Y - 16, pt.y));
+        }
+      });
+      canvas.addEventListener("pointermove", e => {
+        if (gameState !== STATE.PLAYING || !eel.isTouching) return;
+        e.preventDefault();
+        const pt = getCanvasPoint(e);
+        eel.targetY = Math.max(MIN_EEL_Y, Math.min(MAX_EEL_Y - 16, pt.y));
+      });
+      function handlePointerRelease() {
+        if (gameState !== STATE.PLAYING) return;
+        if (eel.isTouching) {
+          eel.isTouching = false; eel.pointerId = null; eel.targetY = SAND_Y;
+          if (eel.y < SAND_Y - 15) { sound.playDive(); spawnSandSplash(EEL_X, SAND_Y, 9, "#ebd08e"); }
+        }
+      }
+      window.addEventListener("pointerup", handlePointerRelease);
+      window.addEventListener("pointercancel", handlePointerRelease);
+      canvas.addEventListener("contextmenu", e => e.preventDefault());
+
+      function update(dt) {
+        gameTime += dt;
+        for (const b of bgBubbles) {
+          b.y -= b.vy * dt; b.x += Math.sin(gameTime * 2 + b.wobblePhase) * 10 * dt;
+          if (b.y < -10) { b.y = SAND_Y - 4; b.x = Math.random() * W; }
+        }
+        const isFever = feverTimer > 0;
+        for (const be of bgEels) {
+          const desired = isFever ? 155 + Math.sin(gameTime * 10 + be.phase) * 28 : eel.isTouching ? be.baseHeight + 22 : be.baseHeight;
+          be.currentHeight += (desired - be.currentHeight) * Math.min(1, dt * 8);
+        }
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i]; p.life -= dt;
+          if (p.life <= 0) { particles.splice(i, 1); continue; }
+          p.vy += p.gravity * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+        }
+        for (let i = floatingTexts.length - 1; i >= 0; i--) {
+          const ft = floatingTexts[i]; ft.life -= dt; ft.y -= 38 * dt;
+          if (ft.life <= 0) floatingTexts.splice(i, 1);
+        }
+        if (gameState !== STATE.PLAYING) return;
+        playTime += dt;
+        if (shakeTimer > 0) shakeTimer = Math.max(0, shakeTimer - dt);
+        if (invulnTimer > 0) invulnTimer = Math.max(0, invulnTimer - dt);
+        if (eel.eatAnim > 0) eel.eatAnim = Math.max(0, eel.eatAnim - dt * 3.5);
+        if (eel.hurtAnim > 0) eel.hurtAnim = Math.max(0, eel.hurtAnim - dt * 2.5);
+        if (feverTimer > 0) { feverTimer = Math.max(0, feverTimer - dt); if (feverTimer === 0) feverCharge = 0; }
+        if (eel.isTouching) eel.y += (eel.targetY - eel.y) * Math.min(1, dt * 16);
+        else eel.y = Math.min(SAND_Y, eel.y + 1650 * dt);
+        const isRetracted = !eel.isTouching && eel.y >= SAND_Y - 12;
+        spawnFoodTimer -= dt;
+        if (spawnFoodTimer <= 0) {
+          spawnFood(feverTimer > 0);
+          spawnFoodTimer = feverTimer > 0 ? 0.22 + Math.random() * 0.16 : Math.max(0.45, 0.95 - Math.min(playTime * 0.004, 0.35)) + Math.random() * 0.35;
+        }
+        if (feverTimer <= 0) {
+          spawnHazardTimer -= dt;
+          if (spawnHazardTimer <= 0) {
+            spawnHazard();
+            spawnHazardTimer = Math.max(0.95, 2.15 - Math.min(playTime * 0.012, 1.05)) + Math.random() * 0.65;
+          }
+        }
+        const extensionRatio = Math.max(0, (SAND_Y - eel.y) / (SAND_Y - MIN_EEL_Y));
+        const headSwayX = EEL_X + Math.sin(gameTime * (feverTimer > 0 ? 12 : 5.5)) * (8 * extensionRatio);
+        const headY = eel.y;
+        for (let i = items.length - 1; i >= 0; i--) {
+          const it = items[i]; it.x += it.vx * dt;
+          if (it.kind === "food") it.y = it.baseY + Math.sin(gameTime * it.wobbleFreq + it.phase) * it.wobbleAmp;
+          else { it.rot += dt * (it.vx > 0 ? 3.2 : -3.2); it.y = it.baseY + Math.sin(gameTime * 3.5 + it.phase) * 7; }
+          if ((it.vx > 0 && it.x > W + 45) || (it.vx < 0 && it.x < -45)) { items.splice(i, 1); continue; }
+          if (!isRetracted && eel.y < SAND_Y - 8) {
+            const dist = Math.hypot(it.x - headSwayX, it.y - headY);
+            if (it.kind === "food") {
+              if (dist <= HEAD_RADIUS + it.r + 5) {
+                combo += 1; if (combo > maxCombo) maxCombo = combo; caughtCount += 1; eel.eatAnim = 1.0;
+                const feverMult = feverTimer > 0 ? 3 : 1, gained = (it.pts + Math.min(combo - 1, 10) * 15) * feverMult;
+                score += gained; if (score > highScore) highScore = score;
+                sound.playCatch(combo, it.subType === "gold_shrimp" || feverTimer > 0);
+                spawnCatchParticles(it.x, it.y, it.subType === "gold_shrimp" ? "#ffd166" : it.subType === "shrimp" ? "#ff8fa3" : "#72efdd", feverTimer > 0);
+                addFloatingText(it.x, it.y - 8, `+${gained}${feverMult > 1 ? " ✨" : ""}`, it.subType === "gold_shrimp" ? "#ffe066" : "#ffffff", 16);
+                if (combo >= 2) addFloatingText(headSwayX, headY - 26, `${combo} COMBO!`, feverTimer > 0 ? "#ff9f1c" : "#72efdd", 14);
+                if (feverTimer <= 0) { feverCharge += 1; if (feverCharge >= 10) triggerFever(); }
+                items.splice(i, 1); continue;
+              }
+            } else if (it.kind === "hazard" && invulnTimer <= 0 && feverTimer <= 0) {
+              if (dist <= HEAD_RADIUS + it.r - 4) {
+                hearts -= 1; combo = 0; feverCharge = 0; invulnTimer = 1.25; shakeTimer = 0.35; eel.hurtAnim = 1.0;
+                sound.playDamage(); spawnCatchParticles(headSwayX, headY, "#ff4d6d", false);
+                addFloatingText(headSwayX, headY - 18, "OUCH! -1 ❤️", "#ff4d6d", 17);
+                items.splice(i, 1);
+                if (hearts <= 0) { endGame(); return; }
+              }
+            }
+          }
+        }
+      }
+
+      function drawRoundedRect(x, y, w, h, r) {
+        ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+        ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+      }
+      function drawBackground() {
+        const isFever = feverTimer > 0 && gameState === STATE.PLAYING;
+        const grad = ctx.createLinearGradient(0, 0, 0, SAND_Y);
+        if (isFever) {
+          const h1 = (gameTime * 140) % 360;
+          grad.addColorStop(0, `hsl(${h1}, 78%, 42%)`); grad.addColorStop(0.55, `hsl(${(h1 + 70) % 360}, 75%, 30%)`); grad.addColorStop(1, "#082444");
+        } else {
+          grad.addColorStop(0, "#12b8d4"); grad.addColorStop(0.38, "#0b72a8"); grad.addColorStop(0.82, "#073f6e"); grad.addColorStop(1, "#05294a");
+        }
+        ctx.fillStyle = grad; ctx.fillRect(0, 0, W, SAND_Y);
+        ctx.save();
+        for (let i = 0; i < 4; i++) {
+          const rayX = 45 + i * 92 + Math.sin(gameTime * 0.7 + i) * 18;
+          const rayGrad = ctx.createLinearGradient(rayX, 0, rayX + 40, SAND_Y * 0.85);
+          rayGrad.addColorStop(0, isFever ? "rgba(255,240,150,0.22)" : "rgba(190,248,255,0.16)"); rayGrad.addColorStop(1, "rgba(190,248,255,0)");
+          ctx.fillStyle = rayGrad; ctx.beginPath(); ctx.moveTo(rayX - 18, 0); ctx.lineTo(rayX + 26, 0); ctx.lineTo(rayX + 75, SAND_Y * 0.85); ctx.lineTo(rayX - 5, SAND_Y * 0.85); ctx.closePath(); ctx.fill();
+        }
+        ctx.restore();
+        for (const c of corals) {
+          ctx.save(); ctx.fillStyle = c.color; const sway = Math.sin(gameTime * 1.6 + c.x) * 4;
+          ctx.beginPath(); ctx.moveTo(c.x - c.w * 0.4, SAND_Y + 4);
+          ctx.quadraticCurveTo(c.x - c.w * 0.5 + sway, SAND_Y - c.h * 0.6, c.x - c.w * 0.2 + sway, SAND_Y - c.h);
+          ctx.quadraticCurveTo(c.x + sway, SAND_Y - c.h * 1.08, c.x + c.w * 0.25 + sway, SAND_Y - c.h * 0.85);
+          ctx.quadraticCurveTo(c.x + c.w * 0.55 + sway, SAND_Y - c.h * 0.45, c.x + c.w * 0.4, SAND_Y + 4);
+          ctx.closePath(); ctx.fill(); ctx.restore();
+        }
+        for (const b of bgBubbles) {
+          ctx.save(); ctx.strokeStyle = "rgba(215,250,255,0.42)"; ctx.fillStyle = "rgba(215,250,255,0.12)"; ctx.lineWidth = 1.2;
+          ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();
+        }
+      }
+      function drawCompanionEel(be) {
+        const isFever = feverTimer > 0 && gameState === STATE.PLAYING, segments = 10, topY = SAND_Y - be.currentHeight, r = 8 * be.scale * 1.35, pts = [];
+        for (let i = 0; i <= segments; i++) {
+          const t = i / segments, py = SAND_Y - t * (SAND_Y - topY);
+          pts.push({ x: be.x + Math.sin(gameTime * (isFever ? 10 : 3.2) + be.phase + t * 2.2) * (10 * be.scale * Math.pow(t, 1.3)), y: py });
+        }
+        ctx.save(); ctx.lineCap = "round"; ctx.lineJoin = "round";
+        ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.lineWidth = r * 2; ctx.strokeStyle = be.type === "spotted" ? "#e9ecef" : "#fff3e0"; ctx.stroke();
+        if (be.type === "striped") {
+          ctx.strokeStyle = "#ff7b00"; ctx.lineWidth = r * 1.9;
+          for (let i = 2; i < pts.length - 1; i += 2) { ctx.beginPath(); ctx.moveTo(pts[i - 1].x, pts[i - 1].y); ctx.lineTo(pts[i].x, pts[i].y); ctx.stroke(); }
+        } else {
+          ctx.fillStyle = "#343a40";
+          for (let i = 2; i < pts.length; i += 2) { ctx.beginPath(); ctx.arc(pts[i].x + (i % 4 === 0 ? 2 : -2), pts[i].y, r * 0.34, 0, Math.PI * 2); ctx.fill(); }
+        }
+        const head = pts[pts.length - 1];
+        ctx.fillStyle = be.type === "spotted" ? "#e9ecef" : "#fff3e0"; ctx.beginPath(); ctx.arc(head.x + be.dir * 2, head.y, r * 1.05, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#1b263b"; ctx.beginPath(); ctx.arc(head.x + be.dir * 3.5, head.y - 1, r * 0.38, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+      function drawPlayerEel() {
+        if (invulnTimer > 0 && Math.floor(invulnTimer * 16) % 2 === 0) return;
+        const isFever = feverTimer > 0 && gameState === STATE.PLAYING;
+        const headY = gameState === STATE.TITLE ? SAND_Y - 125 + Math.sin(gameTime * 3) * 14 : eel.y;
+        const extRatio = Math.max(0, (SAND_Y - headY) / (SAND_Y - MIN_EEL_Y)), segments = 22, pts = [];
+        for (let i = 0; i <= segments; i++) {
+          const t = i / segments, py = SAND_Y + 6 - t * (SAND_Y + 6 - headY);
+          pts.push({ x: EEL_X + Math.sin(gameTime * (isFever ? 12 : 5.5) - t * 3.2) * (8 * extRatio * Math.pow(t, 1.35)), y: py });
+        }
+        const headPt = pts[pts.length - 1], bodyRadius = 13.5;
+        ctx.save(); ctx.lineCap = "round"; ctx.lineJoin = "round";
+        ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.lineWidth = bodyRadius * 2 + 4; ctx.strokeStyle = isFever ? "#ffd166" : "#2b3d4f"; ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.lineWidth = bodyRadius * 2; ctx.strokeStyle = "#fdfcdc"; ctx.stroke();
+        if (SAND_Y - headY > 14) {
+          ctx.fillStyle = "#263238";
+          for (let i = 2; i < pts.length - 1; i++) {
+            const p = pts[i], offset = ((i * 7) % 3 - 1) * 5.2, spotR = (i % 5 === 0) ? 4.4 : 2.5;
+            ctx.beginPath(); ctx.arc(p.x + offset, p.y, spotR, 0, Math.PI * 2); ctx.fill();
+          }
+        }
+        const hr = HEAD_RADIUS * (1 + eel.eatAnim * 0.22);
+        ctx.fillStyle = isFever ? "#ffd166" : "#2b3d4f"; ctx.beginPath(); ctx.arc(headPt.x, headPt.y, hr + 2, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#fdfcdc"; ctx.beginPath(); ctx.arc(headPt.x, headPt.y, hr, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#263238"; ctx.beginPath(); ctx.arc(headPt.x - 7, headPt.y - 10, 3.2, 0, Math.PI * 2); ctx.arc(headPt.x + 8, headPt.y - 9, 2.6, 0, Math.PI * 2); ctx.arc(headPt.x + 1, headPt.y - 13, 2.2, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(255,117,143,0.65)"; ctx.beginPath(); ctx.ellipse(headPt.x - 10, headPt.y + 3, 4.2, 2.6, 0, 0, Math.PI * 2); ctx.ellipse(headPt.x + 10, headPt.y + 3, 4.2, 2.6, 0, 0, Math.PI * 2); ctx.fill();
+        if (eel.hurtAnim > 0.2) {
+          ctx.strokeStyle = "#1b263b"; ctx.lineWidth = 2.4; ctx.beginPath();
+          ctx.moveTo(headPt.x - 9, headPt.y - 5); ctx.lineTo(headPt.x - 4, headPt.y - 2); ctx.lineTo(headPt.x - 9, headPt.y + 1);
+          ctx.moveTo(headPt.x + 9, headPt.y - 5); ctx.lineTo(headPt.x + 4, headPt.y - 2); ctx.lineTo(headPt.x + 9, headPt.y + 1); ctx.stroke();
+        } else {
+          ctx.fillStyle = "#141b29"; ctx.beginPath(); ctx.arc(headPt.x - 6.5, headPt.y - 2.5, 4.2, 0, Math.PI * 2); ctx.arc(headPt.x + 6.5, headPt.y - 2.5, 4.2, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(headPt.x - 7.7, headPt.y - 4, 1.6, 0, Math.PI * 2); ctx.arc(headPt.x + 5.3, headPt.y - 4, 1.6, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.strokeStyle = "#263238"; ctx.lineWidth = 2;
+        if (eel.eatAnim > 0.15 || isFever) {
+          ctx.fillStyle = "#ff5d8f"; ctx.beginPath(); ctx.arc(headPt.x, headPt.y + 5, 4.5, 0, Math.PI); ctx.fill(); ctx.stroke();
+        } else {
+          ctx.beginPath(); ctx.arc(headPt.x, headPt.y + 3.5, 4, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+        }
+        if (eel.isTouching && gameState === STATE.PLAYING) {
+          ctx.strokeStyle = "rgba(255,255,255,0.28)"; ctx.setLineDash([4, 4]); ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.arc(headPt.x, eel.targetY, HEAD_RADIUS + 7, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+        }
+        ctx.restore();
+      }
+      function drawSandFloor() {
+        ctx.fillStyle = "#d9b26f"; ctx.beginPath(); ctx.moveTo(0, SAND_Y + 4); ctx.quadraticCurveTo(W * 0.28, SAND_Y - 14, W * 0.55, SAND_Y + 2); ctx.quadraticCurveTo(W * 0.82, SAND_Y + 12, W, SAND_Y - 4); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
+        const sandGrad = ctx.createLinearGradient(0, SAND_Y, 0, H); sandGrad.addColorStop(0, "#f4d38a"); sandGrad.addColorStop(0.45, "#e2b86b"); sandGrad.addColorStop(1, "#c29347");
+        ctx.fillStyle = sandGrad; ctx.beginPath(); ctx.moveTo(0, SAND_Y + 2); ctx.quadraticCurveTo(W * 0.25, SAND_Y + 10, W * 0.5, SAND_Y + 1); ctx.quadraticCurveTo(W * 0.75, SAND_Y - 6, W, SAND_Y + 4); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = "#c89b4e"; ctx.beginPath(); ctx.ellipse(EEL_X, SAND_Y + 6, 26, 7.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#5c431c"; ctx.beginPath(); ctx.ellipse(EEL_X, SAND_Y + 5, 16, 4.2, 0, 0, Math.PI * 2); ctx.fill();
+        for (const d of sandDots) { ctx.fillStyle = `rgba(120,80,25,${d.alpha})`; ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.fill(); }
+      }
+      function drawItems() {
+        for (const it of items) {
+          ctx.save(); ctx.translate(it.x, it.y); const dir = it.vx >= 0 ? 1 : -1;
+          if (it.kind === "food") {
+            if (it.subType === "plankton") {
+              const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, it.r * 1.4); glow.addColorStop(0, "#ffffff"); glow.addColorStop(0.5, "#72efdd"); glow.addColorStop(1, "rgba(114,239,221,0)");
+              ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, 0, it.r * 1.4, 0, Math.PI * 2); ctx.fill();
+              ctx.fillStyle = "#caffbf"; ctx.beginPath(); ctx.arc(0, 0, 6.5, 0, Math.PI * 2); ctx.fill();
+            } else {
+              const isGold = it.subType === "gold_shrimp"; ctx.scale(dir, 1);
+              if (isGold) { ctx.fillStyle = "rgba(255,215,70,0.28)"; ctx.beginPath(); ctx.arc(0, 0, it.r * 1.45, 0, Math.PI * 2); ctx.fill(); }
+              ctx.fillStyle = isGold ? "#ffd166" : "#ff758f"; ctx.strokeStyle = isGold ? "#b67d00" : "#c9184a"; ctx.lineWidth = 1.8;
+              ctx.beginPath(); ctx.arc(0, 2, 9.5, Math.PI * 0.9, Math.PI * 2.15); ctx.quadraticCurveTo(3, 5, -7, 7); ctx.closePath(); ctx.fill(); ctx.stroke();
+              ctx.beginPath(); ctx.moveTo(-8, 4); ctx.lineTo(-14, 1); ctx.lineTo(-13, 8); ctx.closePath(); ctx.fill();
+              ctx.strokeStyle = isGold ? "#fff3b0" : "#ffccd5"; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(8, 0); ctx.quadraticCurveTo(15, -6, 18, -3); ctx.stroke();
+              ctx.fillStyle = "#1d1e2c"; ctx.beginPath(); ctx.arc(6, -1, 1.8, 0, Math.PI * 2); ctx.fill();
+            }
+          } else if (it.subType === "urchin") {
+            ctx.rotate(it.rot); const spikes = 12; ctx.fillStyle = "#2d004d"; ctx.strokeStyle = "#9d4edd"; ctx.lineWidth = 1.5; ctx.beginPath();
+            for (let s = 0; s < spikes * 2; s++) {
+              const rad = s % 2 === 0 ? it.r + 5 : it.r - 4, ang = (s * Math.PI) / spikes;
+              if (s === 0) ctx.moveTo(Math.cos(ang) * rad, Math.sin(ang) * rad); else ctx.lineTo(Math.cos(ang) * rad, Math.sin(ang) * rad);
+            }
+            ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.rotate(-it.rot);
+            ctx.fillStyle = "#ffbe0b"; ctx.beginPath(); ctx.arc(-4, -1, 2.3, 0, Math.PI * 2); ctx.arc(4, -1, 2.3, 0, Math.PI * 2); ctx.fill();
+          } else {
+            ctx.fillStyle = "#e63946"; ctx.strokeStyle = "#780000"; ctx.lineWidth = 1.8;
+            const pinch = Math.sin(gameTime * 12 + it.phase) * 3;
+            ctx.beginPath(); ctx.arc(-11, -9 - pinch * 0.4, 5.5, 0, Math.PI * 2); ctx.arc(11, -9 - pinch * 0.4, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.ellipse(0, 0, 12.5, 9, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(-5, -8, 3, 0, Math.PI * 2); ctx.arc(5, -8, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = "#111111"; ctx.beginPath(); ctx.arc(-5 + dir, -8, 1.5, 0, Math.PI * 2); ctx.arc(5 + dir, -8, 1.5, 0, Math.PI * 2); ctx.fill();
+          }
+          ctx.restore();
+        }
+      }
+      function drawParticlesAndTexts() {
+        for (const p of particles) {
+          ctx.save(); ctx.globalAlpha = Math.max(0, p.life / p.maxLife); ctx.fillStyle = p.color; ctx.strokeStyle = p.color;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); if (p.type === "bubble") { ctx.lineWidth = 1.6; ctx.stroke(); } else ctx.fill(); ctx.restore();
+        }
+        for (const ft of floatingTexts) {
+          ctx.save(); ctx.globalAlpha = Math.min(1, (ft.life / ft.maxLife) * 1.4);
+          ctx.font = `900 ${ft.size}px "Hiragino Maru Gothic ProN", sans-serif`; ctx.textAlign = "center";
+          ctx.lineWidth = 4; ctx.strokeStyle = "rgba(5,25,45,0.85)"; ctx.strokeText(ft.text, ft.x, ft.y);
+          ctx.fillStyle = ft.color; ctx.fillText(ft.text, ft.x, ft.y); ctx.restore();
+        }
+      }
+      function drawHUD() {
+        ctx.save(); ctx.fillStyle = "rgba(4,22,42,0.72)"; drawRoundedRect(10, 10, W - 20, 78, 14); ctx.fill();
+        ctx.strokeStyle = "rgba(130,225,255,0.28)"; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = "#90e0ef"; ctx.font = "700 10px sans-serif"; ctx.textAlign = "left"; ctx.fillText("SCORE", 22, 27);
+        ctx.fillStyle = "#ffffff"; ctx.font = "900 22px sans-serif"; ctx.fillText(String(score).padStart(6, "0"), 22, 49);
+        ctx.fillStyle = "#ffd166"; drawRoundedRect(138, 17, 66, 22, 11); ctx.fill();
+        ctx.fillStyle = "#07223b"; ctx.font = "900 12px sans-serif"; ctx.textAlign = "center"; ctx.fillText("LV.11 記念", 171, 32);
+        ctx.fillStyle = combo >= 5 ? "#ffe066" : "#a8dadc"; ctx.font = "800 12px sans-serif"; ctx.fillText(`${combo} COMBO`, 171, 50);
+        ctx.font = "18px sans-serif"; ctx.textAlign = "right";
+        let heartStr = ""; for (let i = 0; i < 3; i++) heartStr += i < hearts ? "❤️" : "🖤"; ctx.fillText(heartStr, W - 20, 36);
+        const barX = 22, barY = 62, barW = W - 82, barH = 14;
+        ctx.fillStyle = "rgba(255,255,255,0.14)"; drawRoundedRect(barX, barY, barW, barH, 7); ctx.fill();
+        const isFever = feverTimer > 0, fillRatio = isFever ? feverTimer / FEVER_DURATION : Math.min(1, feverCharge / 10);
+        if (fillRatio > 0) {
+          const barGrad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+          if (isFever) { const hue = (gameTime * 240) % 360; barGrad.addColorStop(0, `hsl(${hue},95%,60%)`); barGrad.addColorStop(0.5, `hsl(${(hue+90)%360},95%,60%)`); barGrad.addColorStop(1, `hsl(${(hue+180)%360},95%,60%)`); }
+          else { barGrad.addColorStop(0, "#38ef7d"); barGrad.addColorStop(1, "#ffd166"); }
+          ctx.fillStyle = barGrad; drawRoundedRect(barX, barY, Math.max(12, barW * fillRatio), barH, 7); ctx.fill();
+        }
+        ctx.fillStyle = "#ffffff"; ctx.font = "900 10px sans-serif"; ctx.textAlign = "center";
+        ctx.fillText(isFever ? `🌈 NYOKI FEVER!! x3 (${feverTimer.toFixed(1)}s)` : `FEVER GAUGE ${feverCharge}/10`, barX + barW / 2, barY + 10.5);
+        ctx.fillStyle = "rgba(255,255,255,0.16)"; drawRoundedRect(W - 44, 54, 26, 26, 8); ctx.fill();
+        ctx.font = "14px sans-serif"; ctx.fillText(sound.muted ? "🔇" : "🔊", W - 31, 72);
+        ctx.fillStyle = "rgba(65,40,10,0.78)"; ctx.font = "700 11px sans-serif";
+        ctx.fillText(eel.isTouching ? "▲ 指を上下に動かしてパクッ！離すと砂に隠れるよ ▼" : "✨ 砂の中は無敵！画面をタッチしてニョキッと伸びよう ✨", W / 2, H - 18);
+        ctx.restore();
+      }
+      function drawTitleScreen() {
+        ctx.save(); ctx.fillStyle = "rgba(3,18,36,0.56)"; ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = "rgba(7,36,66,0.9)"; drawRoundedRect(24, 96, W - 48, 390, 22); ctx.fill();
+        ctx.strokeStyle = "rgba(130,235,255,0.45)"; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = "#ffd166"; drawRoundedRect(78, 114, W - 156, 26, 13); ctx.fill();
+        ctx.fillStyle = "#07223b"; ctx.font = "900 13px sans-serif"; ctx.textAlign = "center"; ctx.fillText("11月11日はチンアナゴの日！", W / 2, 132);
+        ctx.font = '900 28px "Hiragino Maru Gothic ProN", sans-serif'; ctx.lineWidth = 6; ctx.strokeStyle = "#041528";
+        ctx.strokeText("ニョキッと！", W / 2, 178); ctx.fillStyle = "#72efdd"; ctx.fillText("ニョキッと！", W / 2, 178);
+        ctx.font = '900 33px "Hiragino Maru Gothic ProN", sans-serif';
+        ctx.strokeText("チンアナゴ", W / 2, 218); ctx.fillStyle = "#ffffff"; ctx.fillText("チンアナゴ", W / 2, 218);
+        ctx.fillStyle = "rgba(255,255,255,0.08)"; drawRoundedRect(42, 240, W - 84, 128, 14); ctx.fill();
+        ctx.fillStyle = "#e0fbfc"; ctx.font = "700 13px sans-serif";
+        ctx.fillText("👆 タッチ＆上下スライドでニョキッと伸びる！", W / 2, 268);
+        ctx.fillText("🦐 プランクトンやエビを頭でパクッとキャッチ", W / 2, 294);
+        ctx.fillText("🦀 ウニやカニが来たら指を離して砂へ隠れよう", W / 2, 320);
+        ctx.fillStyle = "#ffe066"; ctx.fillText("🌈 10コンボで無敵の NYOKI FEVER (3倍)！", W / 2, 348);
+        ctx.fillStyle = "#90e0ef"; ctx.font = "800 14px sans-serif"; ctx.fillText(`HIGH SCORE: ${String(highScore).padStart(6, "0")}`, W / 2, 395);
+        const pulse = 1 + Math.sin(gameTime * 5) * 0.04;
+        ctx.save(); ctx.translate(W / 2, 440); ctx.scale(pulse, pulse);
+        const btnGrad = ctx.createLinearGradient(-110, 0, 110, 0); btnGrad.addColorStop(0, "#38ef7d"); btnGrad.addColorStop(1, "#11998e");
+        ctx.fillStyle = btnGrad; drawRoundedRect(-110, -24, 220, 48, 24); ctx.fill(); ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = "#042026"; ctx.font = "900 20px sans-serif"; ctx.fillText("TAP TO START", 0, 7); ctx.restore(); ctx.restore();
+      }
+      function drawGameOverScreen() {
+        ctx.save(); ctx.fillStyle = "rgba(3,15,30,0.72)"; ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = "rgba(8,38,68,0.94)"; drawRoundedRect(28, 120, W - 56, 375, 22); ctx.fill();
+        ctx.strokeStyle = "rgba(255,209,102,0.55)"; ctx.lineWidth = 2; ctx.stroke();
+        ctx.textAlign = "center"; ctx.font = "900 32px sans-serif"; ctx.fillStyle = "#ff6b8b"; ctx.fillText("GAME OVER", W / 2, 174);
+        ctx.fillStyle = "rgba(255,255,255,0.08)"; drawRoundedRect(48, 198, W - 96, 170, 14); ctx.fill();
+        ctx.fillStyle = "#90e0ef"; ctx.font = "700 13px sans-serif"; ctx.fillText("FINAL SCORE", W / 2, 224);
+        ctx.fillStyle = "#ffffff"; ctx.font = "900 34px sans-serif"; ctx.fillText(String(score).padStart(6, "0"), W / 2, 262);
+        ctx.fillStyle = "#ffd166"; ctx.font = "800 15px sans-serif"; ctx.fillText(`🏆 HIGH SCORE: ${String(highScore).padStart(6, "0")}`, W / 2, 298);
+        ctx.fillStyle = "#cce3de"; ctx.font = "700 13px sans-serif"; ctx.fillText(`MAX COMBO: ${maxCombo}   |   CAUGHT: ${caughtCount}`, W / 2, 340);
+        const pulse = 1 + Math.sin(gameTime * 5) * 0.035;
+        ctx.save(); ctx.translate(W / 2, 428); ctx.scale(pulse, pulse);
+        const btnGrad = ctx.createLinearGradient(-100, 0, 100, 0); btnGrad.addColorStop(0, "#ffd166"); btnGrad.addColorStop(1, "#f77f00");
+        ctx.fillStyle = btnGrad; drawRoundedRect(-100, -24, 200, 48, 24); ctx.fill(); ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = "#1b1404"; ctx.font = "900 20px sans-serif"; ctx.fillText("🔄 RETRY", 0, 7); ctx.restore(); ctx.restore();
+      }
+      let lastTime = performance.now();
+      function frame(now) {
+        const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) / 1000)); lastTime = now;
+        update(dt); ctx.save();
+        if (shakeTimer > 0) { const mag = shakeTimer * 18; ctx.translate((Math.random() - 0.5) * mag, (Math.random() - 0.5) * mag); }
+        drawBackground(); for (const be of bgEels) drawCompanionEel(be);
+        drawPlayerEel(); drawSandFloor(); drawItems(); drawParticlesAndTexts(); drawHUD();
+        if (gameState === STATE.TITLE) drawTitleScreen(); else if (gameState === STATE.GAMEOVER) drawGameOverScreen();
+        ctx.restore(); requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>
